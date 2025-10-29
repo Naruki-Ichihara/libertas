@@ -1,0 +1,3 @@
+[submodule "libertas/fullcontrol"]
+	path = libertas/fullcontrol
+	url = https://github.com/FullControlXYZ/fullcontrol.git
