@@ -1,3 +1,6 @@
 [submodule "libertas/fullcontrol"]
 	path = libertas/fullcontrol
 	url = https://github.com/FullControlXYZ/fullcontrol.git
+[submodule "libertas/pytop"]
+	path = libertas/pytop
+	url = https://github.com/Naruki-Ichihara/pytop.git

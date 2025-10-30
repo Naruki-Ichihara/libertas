@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "libertas"
 dynamic = ["version"]
-description = "Extended fullcontrol - unconstrained design with additional features"
+description = "Extended fullcontrol with topology optimization - unconstrained design meets structural optimization"
 readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "GPL-3.0-or-later"}
@@ -25,6 +25,8 @@ dependencies = [
     "plotly",
     "pydantic",
     "numpy",
+    "pandas",
+    "dataclasses; python_version<'3.10'",
 ]
 
 [project.optional-dependencies]
@@ -34,6 +36,13 @@ dev = [
     "black>=23.0",
     "ruff>=0.1.0",
     "mypy>=1.0",
+]
+mesh = [
+    "pygmsh>=7.0",
+    "meshio>=5.0",
+]
+viz = [
+    "matplotlib>=3.0",
 ]
 
 [project.urls]

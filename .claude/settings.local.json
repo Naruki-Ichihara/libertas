@@ -3,7 +3,8 @@
     "allow": [
       "Bash(mkdir:*)",
       "Bash(rmdir:*)",
-      "Bash(mv:*)"
+      "Bash(mv:*)",
+      "Bash(python:*)"
     ],
     "deny": [],
     "ask": []

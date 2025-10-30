@@ -2,6 +2,7 @@ FROM ichiharanaruki/pytop:latest
 
 # Build argument to control Claude Code installation
 ARG INSTALL_CLAUDE=true
+ARG INSTALL_FENICS=false
 
 RUN apt update
 RUN apt upgrade -y
@@ -14,6 +15,14 @@ RUN if [ "$INSTALL_CLAUDE" = "true" ]; then \
     curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
     apt install -y nodejs && \
     npm install -g @anthropic-ai/claude-code; \
+    fi
+
+# Install FENICS
+RUN if [ "$INSTALL_FENICS" = "true" ]; then \
+    apt install -y software-properties-common && \
+    add-apt-repository ppa:fenics-packages/fenics -y && \
+    apt updata && \
+    apt install -y fenics \
     fi
 
 WORKDIR /home/
