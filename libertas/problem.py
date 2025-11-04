@@ -456,6 +456,133 @@ class OptimizationResult:
         except Exception as e:
             print(f"Error creating convergence plot: {e}")
 
+    def extract_mesh(
+        self,
+        threshold: float = 0.5,
+        resolution: Tuple[int, int] = (300, 100),
+        max_area: Optional[float] = None,
+        min_angle: float = 25.0,
+        min_edge_length: Optional[float] = None,
+        min_boundary_spacing: Optional[float] = None,
+        smoothness: float = 0.02,
+        corner_angle: float = 140.0,
+        samples_per_curve: int = 20
+    ) -> Dict[str, Any]:
+        """
+        Extract triangular mesh from optimization results and save in XML format.
+
+        This is a high-level convenience method that performs the complete workflow:
+        1. Read density field from XML results
+        2. Extract smooth SVG contours with Bézier curves
+        3. Generate triangular mesh from contours
+        4. Save mesh in FEniCS XML format
+
+        The mesh is saved to output_dir/xml/mesh_from_density.xml and can be
+        used for subsequent optimization or analysis with FEniCS.
+
+        Args:
+            threshold: Density threshold for solid/void (default: 0.5)
+            resolution: Image resolution (width, height) for density field
+            max_area: Maximum triangle area (None = auto based on resolution)
+            min_angle: Minimum triangle angle in degrees (default: 25°)
+            min_edge_length: Minimum edge length. If specified, overrides max_area.
+                           Useful for controlling mesh resolution (None = use max_area)
+            min_boundary_spacing: Minimum spacing between boundary vertices. Filters
+                                boundary points that are too close to avoid tiny elements
+                                near boundaries. Corner points are always preserved regardless
+                                of spacing. (None = no filtering)
+            smoothness: Bézier curve smoothness (0.01-0.1, smaller = smoother)
+            corner_angle: Preserve corners sharper than this angle in degrees. Used for
+                         both SVG contour generation and boundary point filtering.
+            samples_per_curve: Number of samples per Bézier curve
+
+        Returns:
+            Dictionary with mesh data:
+                - vertices: Nx2 array of vertex coordinates
+                - triangles: Mx3 array of triangle indices
+                - edges: Kx2 array of boundary edge indices
+
+        Example:
+            >>> result = problem.optimize(max_iterations=100)
+            >>> mesh_data = result.extract_mesh(threshold=0.5, max_area=0.05)
+            >>> print(f"Generated mesh with {len(mesh_data['triangles'])} triangles")
+        """
+        from libertas.postprocess import (
+            read_density_from_xml,
+            extract_contour_svg,
+            mesh_from_svg
+        )
+
+        xml_dir = self.output_dir / "xml"
+        if not xml_dir.exists():
+            raise FileNotFoundError(
+                f"XML directory not found: {xml_dir}. "
+                "Make sure optimization has completed successfully."
+            )
+
+        print(f"\n{'='*60}")
+        print("Extracting Mesh from Optimization Results")
+        print(f"{'='*60}")
+
+        # Step 1: Read density field
+        print("\n1. Reading density field from XML...")
+        density_img, metadata = read_density_from_xml(
+            str(xml_dir),
+            resolution=resolution,
+            interpolation="linear"
+        )
+        print(f"   Density image: {density_img.shape}")
+        print(f"   Bounds: x=[{metadata['bounds']['x_min']:.2f}, {metadata['bounds']['x_max']:.2f}], "
+              f"y=[{metadata['bounds']['y_min']:.2f}, {metadata['bounds']['y_max']:.2f}]")
+
+        # Step 2: Extract contours as SVG
+        print("\n2. Extracting smooth contours as SVG...")
+        svg_path = xml_dir / "contour_for_mesh.svg"
+        extract_contour_svg(
+            density_img,
+            metadata,
+            str(svg_path),
+            threshold=threshold,
+            smoothness=smoothness,
+            corner_angle=corner_angle,
+            fill_color="#000000"
+        )
+
+        # Step 3: Generate mesh from SVG
+        print("\n3. Generating triangular mesh...")
+
+        # Auto-calculate max_area if neither max_area nor min_edge_length provided
+        if max_area is None and min_edge_length is None:
+            bounds = metadata['bounds']
+            domain_area = (bounds['x_max'] - bounds['x_min']) * (bounds['y_max'] - bounds['y_min'])
+            # Target ~100k triangles for reasonable quality
+            max_area = domain_area / 100000
+
+        mesh_output_path = xml_dir / "mesh_from_density.xml"
+        mesh_data = mesh_from_svg(
+            str(svg_path),
+            str(mesh_output_path),
+            max_area=max_area,
+            min_angle=min_angle,
+            min_edge_length=min_edge_length,
+            min_boundary_spacing=min_boundary_spacing,
+            boundary_corner_angle=corner_angle,
+            samples_per_curve=samples_per_curve
+        )
+
+        print(f"\n{'='*60}")
+        print("Mesh Extraction Complete!")
+        print(f"{'='*60}")
+        print(f"\nMesh saved to: {mesh_output_path}")
+        print(f"  Vertices:  {len(mesh_data['vertices'])}")
+        print(f"  Triangles: {len(mesh_data['triangles'])}")
+        print(f"\nThis mesh can be used with FEniCS:")
+        print(f"  from dolfin import Mesh")
+        print(f"  mesh = Mesh('{mesh_output_path}')")
+        print(f"{'='*60}\n")
+
+        return mesh_data
+
 
 # Alias for shorter name
 TopologyOptimization = AnisotropicTopologyOptimization

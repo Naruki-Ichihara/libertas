@@ -4,7 +4,19 @@
       "Bash(mkdir:*)",
       "Bash(rmdir:*)",
       "Bash(mv:*)",
-      "Bash(python:*)"
+      "Bash(python:*)",
+      "Bash(./install:*)",
+      "Bash(unset:*)",
+      "Bash(tee:*)",
+      "Bash(/workspace/matlab_runtime_tmp/install:*)",
+      "Bash(ldd:*)",
+      "Bash(timeout 180 python:*)",
+      "Bash(timeout 60 python:*)",
+      "Bash(timeout 120 python:*)",
+      "Bash(find:*)",
+      "Bash(cat:*)",
+      "Bash(awk:*)",
+      "Bash(pip install:*)"
     ],
     "deny": [],
     "ask": []

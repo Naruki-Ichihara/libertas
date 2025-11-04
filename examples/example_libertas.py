@@ -15,8 +15,8 @@ nu = 0.22
 
 # Optimization
 p = 3
-target_fraction = 0.40
-filter_radius = 0.2
+target_fraction = 0.60
+filter_radius = 0.4
 filter_radius_orientation = 0.2
 
 # Boundary conditions
@@ -81,9 +81,22 @@ problem = lb.TopologyOptimization(
 result = problem.optimize(
     algorithm="MMA",
     max_iterations=200,
+    tolerance=1e-5,
     density_initial=target_fraction,
 )
 
 # Results
 result.summary()
 result.plot_convergence()
+
+# Extract mesh from optimization results (optional)
+# This generates a triangular mesh from the optimized density field
+# and saves it as mesh_from_density.xml in the xml directory
+print("\nExtracting mesh from optimization results...")
+mesh_data = result.extract_mesh(
+    threshold=0.5,       # Density threshold
+    max_area=0.1,        # Maximum triangle area (or None for auto)
+    min_angle=25.0,      # Minimum angle constraint
+    smoothness=0.02      # Bézier curve smoothness
+)
+print(f"Extracted mesh with {len(mesh_data['triangles'])} triangles")

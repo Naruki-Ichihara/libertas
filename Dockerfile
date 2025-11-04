@@ -17,13 +17,5 @@ RUN if [ "$INSTALL_CLAUDE" = "true" ]; then \
     npm install -g @anthropic-ai/claude-code; \
     fi
 
-# Install FENICS
-RUN if [ "$INSTALL_FENICS" = "true" ]; then \
-    apt install -y software-properties-common && \
-    add-apt-repository ppa:fenics-packages/fenics -y && \
-    apt updata && \
-    apt install -y fenics \
-    fi
-
 WORKDIR /home/
 CMD ["/bin/bash"]
