@@ -2,7 +2,6 @@ FROM ichiharanaruki/pytop:latest
 
 # Build argument to control Claude Code installation
 ARG INSTALL_CLAUDE=true
-ARG INSTALL_FENICS=false
 
 RUN apt update
 RUN apt upgrade -y

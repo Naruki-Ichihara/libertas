@@ -406,9 +406,11 @@ def extract_contour_svg(
 
         # Convert from image coordinates (row, col) to physical coordinates (x, y)
         # contour is (N, 2) array where contour[:, 0] is row (y) and contour[:, 1] is col (x)
-        # Note: Our density_image has row 0 at bottom (y_min), row -1 at top (y_max)
+        # Image coordinates: row 0 at top, row -1 at bottom
+        # Physical coordinates: y_min at bottom, y_max at top
+        # Therefore, need to flip Y: physical_y = y_max - (row/height) * (y_max - y_min)
         physical_x = x_min + (adjusted_contour[:, 1] / width) * (x_max - x_min)
-        physical_y = y_min + (adjusted_contour[:, 0] / height) * (y_max - y_min)
+        physical_y = y_max - (adjusted_contour[:, 0] / height) * (y_max - y_min)
 
         # Clip to domain boundaries to handle padding effects
         physical_x = np.clip(physical_x, x_min, x_max)
@@ -1129,7 +1131,7 @@ def mesh_from_svg(
 
     # Find the largest contour - this is the outer solid boundary
     max_area_idx = np.argmax(contour_areas)
-    max_area = contour_areas[max_area_idx]
+    largest_contour_area = contour_areas[max_area_idx]
 
     # The largest contour is the outer boundary (solid)
     # Smaller contours are holes (voids)
@@ -1137,7 +1139,7 @@ def mesh_from_svg(
     hole_indices = []
 
     for i, info in enumerate(contour_info):
-        if i != outer_boundary_idx and abs(info['signed_area']) < 0.5 * max_area:
+        if i != outer_boundary_idx and abs(info['signed_area']) < 0.5 * largest_contour_area:
             hole_indices.append(i)
 
     if hole_indices:

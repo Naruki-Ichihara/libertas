@@ -6,6 +6,7 @@ fullcontrol/
 output/
 CLAUDE.md
 .claude/
+private/
 
 # C extensions
 *.so

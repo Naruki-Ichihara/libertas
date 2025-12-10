@@ -16,7 +16,8 @@
       "Bash(find:*)",
       "Bash(cat:*)",
       "Bash(awk:*)",
-      "Bash(pip install:*)"
+      "Bash(pip install:*)",
+      "Bash(tree:*)"
     ],
     "deny": [],
     "ask": []
