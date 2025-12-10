@@ -1041,6 +1041,23 @@ def mesh_from_svg(
     tree = ET.parse(svg_path)
     root = tree.getroot()
 
+    # Get SVG viewBox to determine coordinate system bounds
+    viewbox_str = root.get('viewBox', '')
+    if viewbox_str:
+        viewbox_parts = viewbox_str.split()
+        if len(viewbox_parts) == 4:
+            svg_x_min = float(viewbox_parts[0])
+            svg_y_min = float(viewbox_parts[1])
+            svg_width = float(viewbox_parts[2])
+            svg_height = float(viewbox_parts[3])
+            svg_y_max = svg_y_min + svg_height
+        else:
+            svg_y_min = None
+            svg_y_max = None
+    else:
+        svg_y_min = None
+        svg_y_max = None
+
     # Find all path elements
     # Handle both with and without namespace
     paths = root.findall('.//{http://www.w3.org/2000/svg}path')
@@ -1066,6 +1083,11 @@ def mesh_from_svg(
 
         if len(contour_points) < 3:
             continue
+
+        # Flip Y coordinates to convert from SVG coordinate system (origin at top)
+        # to physical coordinate system (origin at bottom)
+        if svg_y_min is not None and svg_y_max is not None:
+            contour_points[:, 1] = svg_y_max - (contour_points[:, 1] - svg_y_min)
 
         # Filter boundary points if min_boundary_spacing is specified
         if min_boundary_spacing is not None and min_boundary_spacing > 0:
