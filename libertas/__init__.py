@@ -22,7 +22,7 @@ from libertas.path import Path
 from libertas.layer import Layer
 from libertas.model import Model
 from libertas.svg_parser import parse_svg_to_paths, save_paths_to_svg
-from libertas.gcode import layer_to_gcode, svg_to_gcode, model_to_gcode
+from libertas.gcode import layer_to_gcode, svg_to_gcode, model_to_gcode, layer_to_json, svg_to_json
 from libertas.print_params import (
     PrintParams,
     TemperatureParams,
@@ -63,6 +63,8 @@ __all__ = [
     "layer_to_gcode",
     "svg_to_gcode",
     "model_to_gcode",
+    "layer_to_json",
+    "svg_to_json",
     # Print parameters
     "PrintParams",
     "TemperatureParams",

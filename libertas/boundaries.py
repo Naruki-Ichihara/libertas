@@ -36,7 +36,8 @@ class BoundaryConditions:
         y: Optional[float] = None,
         z: Optional[float] = None,
         tolerance: float = 1e-6,
-        label: Optional[str] = None
+        label: Optional[str] = None,
+        pointwise: bool = False
     ) -> "BoundaryConditions":
         """
         Fix displacement in x-direction.
@@ -46,17 +47,21 @@ class BoundaryConditions:
             x, y, z: Coordinate constraints
             tolerance: Tolerance for coordinate matching
             label: Physical group label from mesh file
+            pointwise: If True, use pointwise method for single point BCs
 
         Returns:
             Self for method chaining
         """
-        subdomain = self._make_subdomain(selector, x, y, z, tolerance, label)
+        subdomain = self._make_subdomain(
+            selector, x, y, z, tolerance, label, pointwise
+        )
 
         self._dirichlet_bcs.append({
             "subdomain": subdomain,
             "component": 0,  # x-component
             "value": 0.0,
-            "label": label or "fix_x"
+            "label": label or "fix_x",
+            "pointwise": pointwise
         })
 
         return self
@@ -68,7 +73,8 @@ class BoundaryConditions:
         y: Optional[float] = None,
         z: Optional[float] = None,
         tolerance: float = 1e-6,
-        label: Optional[str] = None
+        label: Optional[str] = None,
+        pointwise: bool = False
     ) -> "BoundaryConditions":
         """
         Fix displacement in y-direction.
@@ -78,17 +84,21 @@ class BoundaryConditions:
             x, y, z: Coordinate constraints
             tolerance: Tolerance for coordinate matching
             label: Physical group label from mesh file
+            pointwise: If True, use pointwise method for single point BCs
 
         Returns:
             Self for method chaining
         """
-        subdomain = self._make_subdomain(selector, x, y, z, tolerance, label)
+        subdomain = self._make_subdomain(
+            selector, x, y, z, tolerance, label, pointwise
+        )
 
         self._dirichlet_bcs.append({
             "subdomain": subdomain,
             "component": 1,  # y-component
             "value": 0.0,
-            "label": label or "fix_y"
+            "label": label or "fix_y",
+            "pointwise": pointwise
         })
 
         return self
@@ -100,7 +110,8 @@ class BoundaryConditions:
         y: Optional[float] = None,
         z: Optional[float] = None,
         tolerance: float = 1e-6,
-        label: Optional[str] = None
+        label: Optional[str] = None,
+        pointwise: bool = False
     ) -> "BoundaryConditions":
         """
         Fix displacement in z-direction.
@@ -110,17 +121,21 @@ class BoundaryConditions:
             x, y, z: Coordinate constraints
             tolerance: Tolerance for coordinate matching
             label: Physical group label from mesh file
+            pointwise: If True, use pointwise method for single point BCs
 
         Returns:
             Self for method chaining
         """
-        subdomain = self._make_subdomain(selector, x, y, z, tolerance, label)
+        subdomain = self._make_subdomain(
+            selector, x, y, z, tolerance, label, pointwise
+        )
 
         self._dirichlet_bcs.append({
             "subdomain": subdomain,
             "component": 2,  # z-component
             "value": 0.0,
-            "label": label or "fix_z"
+            "label": label or "fix_z",
+            "pointwise": pointwise
         })
 
         return self
@@ -133,7 +148,8 @@ class BoundaryConditions:
         z: Optional[float] = None,
         tolerance: float = 1e-6,
         value: Union[float, Tuple[float, ...]] = 0.0,
-        label: Optional[str] = None
+        label: Optional[str] = None,
+        pointwise: bool = False
     ) -> "BoundaryConditions":
         """
         Fix all displacement components.
@@ -144,11 +160,14 @@ class BoundaryConditions:
             tolerance: Tolerance for coordinate matching
             value: Fixed displacement value(s)
             label: Physical group label from mesh file
+            pointwise: If True, use pointwise method for single point BCs
 
         Returns:
             Self for method chaining
         """
-        subdomain = self._make_subdomain(selector, x, y, z, tolerance, label)
+        subdomain = self._make_subdomain(
+            selector, x, y, z, tolerance, label, pointwise
+        )
 
         if isinstance(value, (int, float)):
             value = (value,) * self.geometry.dim
@@ -157,7 +176,8 @@ class BoundaryConditions:
             "subdomain": subdomain,
             "component": None,  # All components
             "value": value,
-            "label": label or "fix_displacement"
+            "label": label or "fix_displacement",
+            "pointwise": pointwise
         })
 
         return self
@@ -258,20 +278,26 @@ class BoundaryConditions:
             subdomain = bc_spec["subdomain"]
             component = bc_spec["component"]
             value = bc_spec["value"]
+            pointwise = bc_spec.get("pointwise", False)
+
+            # For pointwise BCs, use method="pointwise"
+            method = "pointwise" if pointwise else "topological"
 
             if component is not None:
                 # Single component
                 bc = pt.DirichletBC(
                     function_space.sub(component),
                     pt.Constant(value),
-                    subdomain
+                    subdomain,
+                    method=method
                 )
             else:
                 # All components
                 bc = pt.DirichletBC(
                     function_space,
                     pt.Constant(value),
-                    subdomain
+                    subdomain,
+                    method=method
                 )
 
             bcs.append(bc)
@@ -312,7 +338,8 @@ class BoundaryConditions:
         y: Optional[float],
         z: Optional[float],
         tolerance: float,
-        label: Optional[str]
+        label: Optional[str],
+        pointwise: bool = False
     ) -> pt.SubDomain:
         """
         Create SubDomain from various selector types.
@@ -339,7 +366,7 @@ class BoundaryConditions:
 
         # Callable selector
         if callable(selector):
-            return self._subdomain_from_callable(selector, dim)
+            return self._subdomain_from_callable(selector, dim, pointwise)
 
         # Coordinate-based
         conditions = []
@@ -356,22 +383,25 @@ class BoundaryConditions:
         def combined_selector(pos: Any) -> bool:
             return all(cond(pos) for cond in conditions)
 
-        return self._subdomain_from_callable(combined_selector, dim)
+        return self._subdomain_from_callable(combined_selector, dim, pointwise)
 
-    def _subdomain_from_callable(self, func: Callable, dim: int) -> pt.SubDomain:
+    def _subdomain_from_callable(
+        self, func: Callable, dim: int, pointwise: bool = False
+    ) -> pt.SubDomain:
         """
         Create SubDomain class from callable.
 
         Args:
             func: Callable that takes coordinates and returns bool
             dim: Spatial dimension
+            pointwise: If True, ignore on_boundary check (for single point BCs)
 
         Returns:
             SubDomain instance
         """
         class CallableSubDomain(pt.SubDomain):
             def inside(self, x: Any, on_boundary: bool) -> bool:
-                if not on_boundary:
+                if not pointwise and not on_boundary:
                     return False
                 try:
                     return func(x[0], x[1], x[2] if dim == 3 else None)

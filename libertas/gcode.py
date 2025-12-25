@@ -445,6 +445,207 @@ def layer_to_gcode(
     return result
 
 
+def layer_to_json(
+    layer: Layer,
+    output_json_path: str,
+    z_height: float = 0.2,
+    separate_paths: bool = True
+) -> Dict[str, Any]:
+    """
+    Convert a Layer to FullControl JSON format with path separation.
+
+    Args:
+        layer: Layer object to convert
+        output_json_path: Output JSON file path (without .json extension)
+        z_height: Z-height for the layer (default: 0.2 mm)
+        separate_paths: If True, insert travel moves between paths to keep them separate.
+                       If False, all points are continuous (default: True)
+
+    Returns:
+        Dictionary with conversion metadata
+
+    Example:
+        >>> import libertas as lb
+        >>> layer = lb.Layer(layer_id=0, paths=paths)
+        >>> result = lb.layer_to_json(layer, "output", z_height=0.2)
+    """
+    if not FC_AVAILABLE:
+        raise ImportError(
+            "FullControl is required for JSON export. "
+            "Make sure fullcontrol is available in libertas/fullcontrol/"
+        )
+
+    print("=" * 70)
+    print("LAYER TO JSON CONVERSION")
+    print("=" * 70)
+
+    print(f"\nLayer: {layer.name} (ID: {layer.layer_id})")
+    stats = layer.statistics()
+    print(f"  Paths: {stats['total_paths']}")
+    print(f"  Stripe paths: {stats['stripe_paths']}")
+    print(f"  Contour paths: {stats['contour_paths']}")
+    print(f"  Total length: {stats['total_length']:.2f} mm")
+
+    # Convert to FullControl steps
+    steps = []
+    num_extruder_commands = 0
+
+    for path_idx, path in enumerate(layer.paths):
+        # Turn on extruder at start of each path
+        if separate_paths:
+            steps.append(fc.Extruder(on=True))
+            num_extruder_commands += 1
+
+        # Add all points in this path with color based on path type
+        # Blue for stripe paths, red for contour paths
+        path_color = [0, 0.5, 1] if path.path_type == 'stripe' else [1, 0, 0]
+
+        for node_idx, node in enumerate(path.nodes):
+            x, y = node[0], node[1]
+            point = fc.Point(x=x, y=y, z=z_height, color=path_color)
+            steps.append(point)
+
+        # Add travel move to next path if not last path
+        if separate_paths and path_idx < len(layer.paths) - 1:
+            # Turn off extruder
+            steps.append(fc.Extruder(on=False))
+            num_extruder_commands += 1
+
+            # Add travel point to first point of next path (gray color for travel)
+            next_path = layer.paths[path_idx + 1]
+            next_start = next_path.nodes[0]
+            travel_color = [0.5, 0.5, 0.5]  # Gray for travel moves
+            travel_point = fc.Point(x=next_start[0], y=next_start[1], z=z_height, color=travel_color)
+            steps.append(travel_point)
+
+    num_points = len([s for s in steps if isinstance(s, fc.Point)])
+    print(f"\nConverted {num_points:,} points at z={z_height} mm")
+    print(f"Path separation: {'enabled' if separate_paths else 'disabled'}")
+    if separate_paths:
+        print(f"  Added {num_extruder_commands} Extruder on/off commands to separate {stats['total_paths']} paths")
+
+    # Export to JSON
+    print(f"\nExporting to: {output_json_path}.json")
+    fc.export_design(steps, output_json_path)
+
+    result = {
+        'output_file': f"{output_json_path}.json",
+        'num_paths': stats['total_paths'],
+        'num_points': len(steps),
+        'z_height': z_height,
+        'separate_paths': separate_paths,
+        'stripe_paths': stats['stripe_paths'],
+        'contour_paths': stats['contour_paths'],
+        'total_length': stats['total_length']
+    }
+
+    print("\n" + "=" * 70)
+    print("CONVERSION COMPLETE")
+    print("=" * 70)
+    print(f"  Output: {output_json_path}.json")
+    print(f"  Points: {len(steps):,}")
+    print(f"  Paths: {stats['total_paths']}")
+    print("=" * 70)
+
+    return result
+
+
+def svg_to_json(
+    svg_path: str,
+    output_json_path: str,
+    segment_length: float = 0.5,
+    z_height: float = 0.2,
+    separate_paths: bool = True,
+    optimize_paths: bool = False,
+    filter_path_type: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Convert an SVG file directly to FullControl JSON format.
+
+    This is a convenience function that combines SVG parsing, Layer creation,
+    and JSON export with path separation.
+
+    Args:
+        svg_path: Input SVG file path
+        output_json_path: Output JSON file path (without .json extension)
+        segment_length: Segment length for SVG discretization in mm (default: 0.5)
+        z_height: Z-height for all points (default: 0.2 mm)
+        separate_paths: Keep paths separate with travel moves (default: True)
+        optimize_paths: Apply path order optimization (default: False)
+        filter_path_type: Filter paths by type - 'stripe', 'contour', or None for all (default: None)
+
+    Returns:
+        Dictionary with conversion metadata
+
+    Example:
+        >>> import libertas as lb
+        >>>
+        >>> # Export only stripe paths
+        >>> result = lb.svg_to_json(
+        ...     svg_path="paths.svg",
+        ...     output_json_path="output",
+        ...     z_height=0.2,
+        ...     filter_path_type='stripe'
+        ... )
+    """
+    from libertas.svg_parser import parse_svg_to_paths
+
+    print("=" * 70)
+    print("SVG TO JSON CONVERSION")
+    print("=" * 70)
+
+    # Parse SVG
+    print(f"\nParsing SVG: {svg_path}")
+    paths = parse_svg_to_paths(svg_path, segment_length=segment_length)
+    print(f"  Parsed {len(paths)} paths")
+
+    # Filter by path type if requested
+    if filter_path_type:
+        original_count = len(paths)
+        paths = [p for p in paths if p.path_type == filter_path_type]
+        print(f"  Filtered to {len(paths)} {filter_path_type} paths (removed {original_count - len(paths)})")
+
+    if len(paths) == 0:
+        raise ValueError("No paths remaining after filtering")
+
+    # Create Layer
+    layer = Layer(layer_id=0, paths=paths, name="SVGLayer")
+    stats = layer.statistics()
+    print(f"  Stripe paths: {stats['stripe_paths']}")
+    print(f"  Contour paths: {stats['contour_paths']}")
+    print(f"  Total length: {stats['total_length']:.2f} mm")
+
+    # Optimize paths if requested
+    if optimize_paths:
+        print("\n" + "-" * 70)
+        print("Optimizing path order...")
+        print("-" * 70)
+
+        # Optimize closed paths first
+        if stats['closed_paths'] > 0:
+            closed_travel = layer.optimize_closed_path_order()
+            print(f"  Closed path travel: {closed_travel:.2f} mm")
+
+        # Then optimize open paths
+        if stats['open_paths'] > 0:
+            open_travel = layer.optimize_open_path_order()
+            print(f"  Open path travel: {open_travel:.2f} mm")
+
+    # Convert to JSON
+    print("\n" + "-" * 70)
+    print("Converting to JSON...")
+    print("-" * 70)
+    result = layer_to_json(layer, output_json_path, z_height=z_height, separate_paths=separate_paths)
+
+    # Add parsing metadata
+    result['num_paths_parsed'] = len(paths)
+    result['segment_length'] = segment_length
+    result['optimized'] = optimize_paths
+    result['filter_path_type'] = filter_path_type
+
+    return result
+
+
 def svg_to_gcode(
     svg_path: str,
     output_gcode_path: str,
