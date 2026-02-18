@@ -24,11 +24,14 @@ classifiers = [
 dependencies = [
     "plotly",
     "pydantic",
-    "numpy",
+    "numpy<2",
     "pandas",
     "dataclasses; python_version<'3.10'",
     "fullcontrol",
-    "pytop @ git+https://github.com/Naruki-Ichihara/pytop.git",
+    "scikit-image>=0.19.0",
+    "scipy>=1.7.0",
+    "svgpathtools>=1.4.0",
+    "triangle>=20200424",
 ]
 
 [project.optional-dependencies]
@@ -38,12 +41,6 @@ dev = [
     "black>=23.0",
     "ruff>=0.1.0",
     "mypy>=1.0",
-]
-mesh = [
-    "scikit-image>=0.19.0",
-    "scipy>=1.7.0",
-    "svgpathtools>=1.4.0",
-    "triangle>=20200424",
 ]
 viz = [
     "matplotlib>=3.0",

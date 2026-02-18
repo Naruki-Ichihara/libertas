@@ -5,9 +5,9 @@ from pathlib import Path
 import numpy as np
 
 try:
-    from libertas.pytop import pytop as pt
+    import pytop as pt
 except ImportError:
-    from libertas import pytop as pt
+    pt = None
 
 
 class Geometry:

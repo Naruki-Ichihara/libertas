@@ -6,12 +6,9 @@ import numpy as np
 import xml.etree.ElementTree as ET
 
 try:
-    from libertas.pytop import pytop as pt
+    import pytop as pt
 except ImportError:
-    try:
-        from libertas import pytop as pt
-    except ImportError:
-        pt = None
+    pt = None
 
 
 def read_density_from_xml(

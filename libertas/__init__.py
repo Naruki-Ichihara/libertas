@@ -108,7 +108,7 @@ except (ImportError, ModuleNotFoundError):
 
 # Optional: Try to import pytop (for advanced usage)
 try:
-    from libertas import pytop
+    import pytop
     __all__.append("pytop")
 except (ImportError, ModuleNotFoundError):
     pytop = None

@@ -4,9 +4,9 @@ from typing import Callable, Optional, Union, Tuple, List, Any
 from libertas.geometry import Geometry
 
 try:
-    from libertas.pytop import pytop as pt
+    import pytop as pt
 except ImportError:
-    from libertas import pytop as pt
+    pt = None
 
 
 class BoundaryConditions:

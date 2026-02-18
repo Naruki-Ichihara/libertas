@@ -8,27 +8,30 @@ from libertas.boundaries import BoundaryConditions
 from libertas.materials import OrthotropicMaterial
 
 try:
-    from libertas.pytop import pytop as pt
-    from libertas.pytop.pytop.physics.elasticity import (
-        linear_2D_orthotropic_elasticity_bilinear_form_tensor,
-        orthotropic_2d_plane_stress_tensor
-    )
-    from libertas.pytop.pytop.physics.utils import penalized_weight, isoparametric_2D_box_to_triangle, sgn
-except ImportError:
-    from libertas import pytop as pt
+    import pytop as pt
     from pytop.physics.elasticity import (
         linear_2D_orthotropic_elasticity_bilinear_form_tensor,
         orthotropic_2d_plane_stress_tensor
     )
     from pytop.physics.utils import penalized_weight, isoparametric_2D_box_to_triangle, sgn
+except ImportError:
+    pt = None
 
 
 class AnisotropicTopologyOptimization:
     """
-    Anisotropic topology optimization with density and orientation design variables.
+    Simultaneous density and fiber orientation optimization for orthotropic materials.
 
-    This is specialized for orthotropic material optimization with orientation,
-    matching the example.py workflow.
+    Minimizes structural compliance subject to a volume fraction constraint.
+    Two design variables are optimized concurrently:
+
+    - **density** (rho): element material fraction, penalized via SIMP (rho^p).
+    - **orientation** (theta): local fiber direction, parameterized through an
+      isoparametric 2D box-to-triangle mapping to ensure a valid orientation tensor.
+
+    Both variables are regularized with a Helmholtz PDE filter to remove
+    mesh-dependent checkerboard patterns. The NLopt MMA algorithm is used
+    for gradient-based optimization via pytop.
     """
 
     def __init__(
@@ -584,5 +587,5 @@ class OptimizationResult:
         return mesh_data
 
 
-# Alias for shorter name
+# Public alias — use this name in scripts and examples
 TopologyOptimization = AnisotropicTopologyOptimization
