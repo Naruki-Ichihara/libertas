@@ -20,8 +20,8 @@ import pygmsh
 
 # Parameters -------------------------------------------------------
 # Geometry (mm)
-L = 200
-H = 10
+L = 100
+H = 50
 mesh_size = .5
 
 # Material (MPa) — orthotropic, fiber-reinforced composite
@@ -100,7 +100,7 @@ problem = lb.TopologyOptimization(
 # Optimization -----------------------------------------------------------
 result = problem.optimize(
     algorithm="MMA",        # Method of Moving Asymptotes (gradient-based)
-    max_iterations=100,
+    max_iterations=50,
     tolerance=1e-5,
     density_initial=target_fraction,
 )

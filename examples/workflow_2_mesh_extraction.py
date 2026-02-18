@@ -29,7 +29,7 @@ output_dir = "outputs/cantilever_problem"
 xml_dir = f"{output_dir}/xml"
 
 # Rasterization — higher resolution captures finer boundary detail
-resolution = (2000, 100)     # (width, height) in pixels; match aspect ratio of the domain
+resolution = (1000, 500)     # (width, height) in pixels; match aspect ratio of the domain
 
 # Pre-smoothing — blurs the density field before contouring to suppress FEM artifacts
 gaussian_sigma = 5           # pixels; increase for a smoother boundary, 0 to disable
