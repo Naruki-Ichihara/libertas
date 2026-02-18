@@ -27,6 +27,8 @@ dependencies = [
     "numpy",
     "pandas",
     "dataclasses; python_version<'3.10'",
+    "fullcontrol",
+    "pytop @ git+https://github.com/Naruki-Ichihara/pytop.git",
 ]
 
 [project.optional-dependencies]
