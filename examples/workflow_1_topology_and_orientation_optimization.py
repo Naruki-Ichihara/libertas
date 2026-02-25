@@ -22,7 +22,7 @@ import pygmsh
 # Geometry (mm)
 L = 100
 H = 50
-mesh_size = .5
+mesh_size = 1
 
 # Material (MPa) — orthotropic, fiber-reinforced composite
 E1 = 370e3   # Young's modulus along fiber
@@ -100,7 +100,7 @@ problem = lb.TopologyOptimization(
 # Optimization -----------------------------------------------------------
 result = problem.optimize(
     algorithm="MMA",        # Method of Moving Asymptotes (gradient-based)
-    max_iterations=50,
+    max_iterations=100,
     tolerance=1e-5,
     density_initial=target_fraction,
 )
