@@ -1306,7 +1306,8 @@ class FibrifierGcodeGenerator:
 
         for i in range(1, n):
             x, y = nodes[i]
-            target_angle = angles[i]
+            # angles[i-1] = direction of segment (i-1) → i (the segment we're about to travel)
+            target_angle = angles[i - 1]
 
             # Insert cut point
             if not cut_emitted and i == cut_idx + 1 and cut_point != nodes[cut_idx]:
