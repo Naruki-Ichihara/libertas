@@ -25,25 +25,25 @@ from scipy.ndimage import gaussian_filter
 # ============================================================================
 
 # Input/Output paths
-output_dir = "outputs/cantilever_problem"
+output_dir = "outputs/cantilever_10"
 xml_dir = f"{output_dir}/xml"
 
 # Rasterization — higher resolution captures finer boundary detail
 resolution = (1000, 500)     # (width, height) in pixels; match aspect ratio of the domain
 
 # Pre-smoothing — blurs the density field before contouring to suppress FEM artifacts
-gaussian_sigma = 5           # pixels; increase for a smoother boundary, 0 to disable
+gaussian_sigma = 2           # pixels; increase for a smoother boundary, 0 to disable
 
 # Contour extraction
 threshold = 0.5              # density iso-level that defines the solid/void interface
-smoothness = 0.02            # Bézier fit tolerance (smaller = closer to raw contour)
-corner_angle = 165.0         # corners sharper than this angle (deg) are treated as hard corners
+smoothness = 0.01            # Bézier fit tolerance (smaller = smoother, larger = sharper corners)
+corner_angle = 120.0         # corners sharper than this angle (deg) are treated as hard corners
 
 # Mesh quality — Triangle library constraints
-max_area = 0.1               # maximum triangle area (mm²); primary mesh density control
+max_area = 0.2               # maximum triangle area (mm²); primary mesh density control
 min_angle = 25.0             # minimum interior angle (deg); prevents sliver elements
-min_edge_length = 0.2        # minimum edge length (mm); set None to rely on max_area only
-samples_per_curve = 5        # sample points per Bézier curve segment
+min_edge_length = 0.05       # None = rely on max_area only (avoids overriding max_area)
+samples_per_curve = 3        # sample points per Bézier curve segment
 
 # ============================================================================
 # Step 1: Read Density Field
@@ -108,7 +108,7 @@ mesh_data = lb.mesh_from_svg(
     max_area=max_area,  # Use configuration value
     min_angle=min_angle,
     min_edge_length=min_edge_length,
-    min_boundary_spacing=5.0,  # Filter boundary points to be at least 5mm apart
+    min_boundary_spacing=2.0,  # Filter boundary points to be at least 2mm apart
     boundary_corner_angle=corner_angle,
     samples_per_curve=samples_per_curve
 )

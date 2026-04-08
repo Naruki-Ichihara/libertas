@@ -1217,20 +1217,21 @@ def mesh_from_svg(
         tri_input['holes'] = holes
         print(f"  Detected {len(holes)} hole(s)")
 
-    # Convert min_edge_length to max_area if specified
-    # For an equilateral triangle: area = (sqrt(3)/4) * edge^2
-    # For conservative estimate with min_angle constraint, use: area ≈ 0.5 * edge^2
+    # Enforce min_edge_length by setting a floor on max_area.
+    # Triangle cannot enforce a minimum edge length directly, but we can
+    # prevent max_area from being so small that tiny edges are forced.
+    # For an equilateral triangle: area = (sqrt(3)/4) * edge^2 ≈ 0.433 * edge^2
     if min_edge_length is not None:
-        # Calculate max_area from min_edge_length
-        # Using conservative factor that works well with min_angle constraints
-        calculated_max_area = 0.5 * (min_edge_length ** 2)
+        area_floor = 0.433 * (min_edge_length ** 2)
         if max_area is None:
-            max_area = calculated_max_area
-            print(f"  Min edge length: {min_edge_length:.4f} → Max area: {max_area:.6f}")
+            max_area = area_floor
+            print(f"  Min edge length: {min_edge_length:.4f} → Max area floor: {max_area:.6f}")
+        elif max_area < area_floor:
+            print(f"  Min edge length: {min_edge_length:.4f} → Raising max_area "
+                  f"from {max_area:.6f} to {area_floor:.6f}")
+            max_area = area_floor
         else:
-            # Use the more restrictive constraint
-            max_area = min(max_area, calculated_max_area)
-            print(f"  Min edge length: {min_edge_length:.4f} (combined with max_area)")
+            print(f"  Min edge length: {min_edge_length:.4f} (max_area={max_area:.6f} already satisfies)")
 
     # Build Triangle options string
     # 'p' - triangulate a Planar Straight Line Graph
@@ -1587,6 +1588,228 @@ def generate_stripe_pattern(
         print(f"  U = pt.FunctionSpace(mesh, 'CG', 1)")
         print(f"  stripe = pt.read_fenics_function_from_file('{xml_output_path}', U, '{output_name}')")
     print(f"{'='*60}\n")
+
+
+def _rotate_orientation_tensor(
+    tens: "pt.Function",
+    theta_rad: float,
+    V: "pt.FunctionSpace",
+) -> "pt.Function":
+    """Rotate an orientation tensor vector (a11, a22, a12) by a fixed angle.
+
+    The orientation tensor is stored as a 3-component vector ``[a11, a22, a12]``
+    representing the symmetric 2x2 matrix ``[[a11, a12], [a12, a22]]``.
+    A rotation by θ gives::
+
+        a' = R(θ) @ a @ R(θ)^T
+
+    which expands to::
+
+        a'11 = c² a11 + s² a22 - 2sc a12
+        a'22 = s² a11 + c² a22 + 2sc a12
+        a'12 = sc (a11 - a22) + (c² - s²) a12
+
+    Args:
+        tens: FEniCS vector Function with components (a11, a22, a12).
+        theta_rad: Rotation angle in radians.
+        V: VectorFunctionSpace (dim=3) on the same mesh.
+
+    Returns:
+        New FEniCS Function with rotated components.
+    """
+    import math
+    c = math.cos(theta_rad)
+    s = math.sin(theta_rad)
+    c2, s2, sc = c * c, s * s, s * c
+
+    rotated_expr = pt.as_vector([
+        c2 * tens[0] + s2 * tens[1] - 2 * sc * tens[2],
+        s2 * tens[0] + c2 * tens[1] + 2 * sc * tens[2],
+        sc * (tens[0] - tens[1]) + (c2 - s2) * tens[2],
+    ])
+    rotated = pt.project(rotated_expr, V, annotate=False)
+    return rotated
+
+
+def generate_stacked_stripe_patterns(
+    xml_dir: str,
+    extracted_mesh_path: str,
+    stacking_sequence: list,
+    stripe_width: float = 0.06,
+    refine_levels: int = 2,
+    absolute_tol: float = 1e-3,
+    output_prefix: str = "stripe",
+) -> dict:
+    """Generate stripe patterns for each unique ply angle in a stacking sequence.
+
+    For a stacking sequence such as ``[0, 90, 90, 0]``, the optimized
+    orientation tensor is rotated by each *unique* offset and fed into
+    ``sh_stripe_tensor`` independently.  Duplicate angles are detected so
+    that the expensive PDE solve runs only once per unique offset.
+
+    Args:
+        xml_dir: Directory containing ``mesh.xml``, ``density.xml``, ``orientation.xml``.
+        extracted_mesh_path: Path to extracted mesh XML file.
+        stacking_sequence: Layer angle offsets in **degrees** (e.g. ``[0, 90, 90, 0]``).
+        stripe_width: Stripe hatch spacing in mesh units.
+        refine_levels: Mesh refinement levels for the extracted mesh.
+        absolute_tol: Convergence tolerance for Swift-Hohenberg solver.
+        output_prefix: Base name for output files.  Files are named
+            ``{output_prefix}_{angle}deg`` (e.g. ``stripe_0deg``).
+
+    Returns:
+        Dictionary mapping each ply index to its output info::
+
+            {
+                "plies": [
+                    {"index": 0, "angle": 0,  "output_name": "stripe_0deg", ...},
+                    {"index": 1, "angle": 90, "output_name": "stripe_90deg", ...},
+                    ...
+                ],
+                "unique_angles": [0, 90],
+                "mesh_path": "<refined mesh path>",
+            }
+    """
+    import math
+
+    if pt is None:
+        raise ImportError("FEniCS (pytop) is required for stacked stripe generation.")
+
+    try:
+        from pytop.toolkit.dehomogenization import sh_stripe_tensor
+    except ImportError:
+        raise ImportError(
+            "sh_stripe_tensor not found. "
+            "Make sure pytop.toolkit.dehomogenization is available."
+        )
+
+    xml_dir = Path(xml_dir)
+
+    # --- Identify unique angles -----------------------------------------------
+    unique_angles = sorted(set(stacking_sequence))
+    angle_to_output = {a: f"{output_prefix}_{a}deg" for a in unique_angles}
+
+    print(f"\n{'='*60}")
+    print("Stacked Stripe Pattern Generation")
+    print(f"{'='*60}")
+    print(f"  Stacking sequence : {stacking_sequence}")
+    print(f"  Unique angles     : {unique_angles}")
+    print(f"  Stripe width      : {stripe_width}")
+    print(f"  Refine levels     : {refine_levels}")
+
+    # --- Load meshes and fields (once) ----------------------------------------
+    print("\n1. Loading original mesh and fields...")
+    mesh_orig = pt.Mesh(str(xml_dir / "mesh.xml"))
+    U_orig = pt.FunctionSpace(mesh_orig, 'CG', 1)
+    V_orig = pt.VectorFunctionSpace(mesh_orig, 'CG', 1, dim=3)
+
+    rho = pt.read_fenics_function_from_file(str(xml_dir / "density"), U_orig, "density")
+    tens = pt.read_fenics_function_from_file(str(xml_dir / "orientation"), V_orig, "orientation")
+    rho.set_allow_extrapolation(True)
+    tens.set_allow_extrapolation(True)
+
+    # --- Load and refine extracted mesh (once) --------------------------------
+    print(f"\n2. Loading extracted mesh: {extracted_mesh_path}")
+    mesh_extracted = pt.Mesh(str(extracted_mesh_path))
+    mesh_refined = mesh_extracted
+    for i in range(refine_levels):
+        mesh_refined = pt.refine(mesh_refined)
+    print(f"   Refined mesh: {mesh_refined.num_vertices()} vertices, "
+          f"{mesh_refined.num_cells()} cells")
+
+    U_refined = pt.FunctionSpace(mesh_refined, 'CG', 1)
+    V_refined = pt.VectorFunctionSpace(mesh_refined, 'CG', 1, dim=3)
+
+    # --- Project density (once) -----------------------------------------------
+    print("\n3. Projecting density to refined mesh...")
+    rho_refined = pt.project(rho, U_refined, annotate=False)
+
+    # --- Project base orientation (once) and rotate per unique angle ----------
+    print("\n4. Projecting orientation to refined mesh...")
+    tens_refined = pt.project(tens, V_refined, annotate=False)
+
+    # Save refined mesh
+    refined_mesh_path = None
+    if refine_levels > 0:
+        refined_mesh_path = xml_dir / f"mesh_refined_r{refine_levels}.xml"
+        try:
+            import dolfin
+            dolfin.File(str(refined_mesh_path)) << mesh_refined
+        except Exception:
+            pass
+
+    h5_dir = xml_dir.parent / "h5"
+    h5_dir.mkdir(exist_ok=True)
+
+    # --- Generate stripe for each unique angle --------------------------------
+    generated = {}  # angle -> output_name
+    for angle_deg in unique_angles:
+        theta_rad = angle_deg * math.pi / 180.0
+        output_name = angle_to_output[angle_deg]
+
+        print(f"\n5. Generating stripe for {angle_deg}° offset...")
+
+        if abs(theta_rad) < 1e-12:
+            tens_rotated = tens_refined
+        else:
+            tens_rotated = _rotate_orientation_tensor(tens_refined, theta_rad, V_refined)
+
+        stripe = sh_stripe_tensor(
+            mesh_refined,
+            tens_rotated,
+            rho_refined,
+            stripe_width,
+            absolute_tol=absolute_tol,
+        )
+
+        # Save XML
+        xml_output = xml_dir / output_name
+        try:
+            import dolfin
+            dolfin.File(str(xml_output) + ".xml") << stripe
+            print(f"   Saved: {xml_output}.xml")
+        except Exception as e:
+            print(f"   Warning: Could not save XML: {e}")
+
+        # Save XDMF/HDF5
+        h5_output = h5_dir / output_name
+        try:
+            import dolfin
+            xdmf = dolfin.XDMFFile(str(h5_output) + ".xdmf")
+            xdmf.write(stripe)
+            xdmf.close()
+            print(f"   Saved: {h5_output}.xdmf")
+        except Exception as e:
+            print(f"   Warning: Could not save XDMF: {e}")
+
+        generated[angle_deg] = output_name
+
+    # --- Build result mapping -------------------------------------------------
+    plies = []
+    for idx, angle_deg in enumerate(stacking_sequence):
+        plies.append({
+            "index": idx,
+            "angle": angle_deg,
+            "output_name": generated[angle_deg],
+            "stripe_xml": str(xml_dir / generated[angle_deg]),
+        })
+
+    result = {
+        "plies": plies,
+        "unique_angles": unique_angles,
+        "mesh_path": str(refined_mesh_path or extracted_mesh_path),
+    }
+
+    print(f"\n{'='*60}")
+    print("Stacked Stripe Generation Complete!")
+    print(f"{'='*60}")
+    print(f"\nGenerated {len(unique_angles)} unique stripe patterns "
+          f"for {len(stacking_sequence)} plies:")
+    for ply in plies:
+        print(f"  Ply {ply['index']}: {ply['angle']:+d}° → {ply['output_name']}")
+    print(f"{'='*60}\n")
+
+    return result
 
 
 def stripe_to_image(

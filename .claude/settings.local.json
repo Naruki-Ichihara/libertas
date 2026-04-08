@@ -18,7 +18,16 @@
       "Bash(awk:*)",
       "Bash(pip install:*)",
       "Bash(tree:*)",
-      "Bash(git rm:*)"
+      "Bash(git rm:*)",
+      "Bash(python3 -c \"from libertas.svg_parser import parse_svg_to_paths; from libertas.layer import Layer; from tsp_solver.greedy import solve_tsp; import matplotlib; print\\('All imports OK'\\)\")",
+      "Bash(python3 -c ':*)",
+      "Bash(python3 fiber_gcode_tool.py outputs/cantilever_10/stripe_paths_10deg.svg outputs/cantilever_10/stripe_paths_-10deg.svg -o outputs/cantilever_10/stacked_2layer.gcode --plot outputs/cantilever_10/stacked_2layer_preview.png)",
+      "Bash(python3 fiber_gcode_tool.py test_simple.svg test_simple.svg -o test_simple_output.gcode --sequence PF --offset-x 169.0 --offset-y 0.0 --no-flip-y --smooth-sigma 0 --decimate-epsilon 100)",
+      "Bash(sed -n '68,82p' test_simple_output.gcode)",
+      "Bash(python3 fiber_gcode_tool.py outputs/cantilever_10/stripe_paths_10deg.svg -o outputs/cantilever_10/cantilever_10deg_1layer.gcode --sequence F --plot outputs/cantilever_10/cantilever_10deg_1layer_preview.png)",
+      "Bash(ls -la /workspace/libertas/*.py)",
+      "Read(//workspace/**)",
+      "Bash(python3 examples/workflow_4n_fibrifier_gcode.py)"
     ],
     "deny": [],
     "ask": []

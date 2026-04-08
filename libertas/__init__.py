@@ -7,6 +7,7 @@ from libertas.geometry import Geometry
 from libertas.boundaries import BoundaryConditions
 from libertas.materials import OrthotropicMaterial, MaterialLibrary
 from libertas.problem import TopologyOptimization, OptimizationResult
+from libertas.stacking import build_stacked_stiffness_tensor, stacked_stress_tensor, stacked_bilinear_form
 from libertas.postprocess import (
     read_density_from_xml,
     read_density_from_xml_fenics,
@@ -15,6 +16,7 @@ from libertas.postprocess import (
     extract_contour_svg,
     mesh_from_svg,
     generate_stripe_pattern,
+    generate_stacked_stripe_patterns,
     stripe_to_image,
     stripe_to_svg,
 )
@@ -23,6 +25,18 @@ from libertas.layer import Layer
 from libertas.model import Model
 from libertas.svg_parser import parse_svg_to_paths, save_paths_to_svg
 from libertas.gcode import layer_to_gcode, svg_to_gcode, model_to_gcode, layer_to_json, svg_to_json
+from libertas.fibrifier_gcode import (
+    svg_to_fibrifier_gcode,
+    FibrifierGcodeGenerator,
+    FibrifierParams,
+    FibrifierTemperatureParams,
+    FibrifierSpeedParams,
+    FibrifierExtrusionParams,
+    FibrifierFiberParams,
+    FibrifierRetractionParams,
+    FibrifierLayer,
+    FibrifierModel,
+)
 from libertas.print_params import (
     PrintParams,
     TemperatureParams,
@@ -65,6 +79,17 @@ __all__ = [
     "model_to_gcode",
     "layer_to_json",
     "svg_to_json",
+    # Fibrifier gcode (9T Labs format)
+    "svg_to_fibrifier_gcode",
+    "FibrifierGcodeGenerator",
+    "FibrifierParams",
+    "FibrifierTemperatureParams",
+    "FibrifierSpeedParams",
+    "FibrifierExtrusionParams",
+    "FibrifierFiberParams",
+    "FibrifierRetractionParams",
+    "FibrifierLayer",
+    "FibrifierModel",
     # Print parameters
     "PrintParams",
     "TemperatureParams",

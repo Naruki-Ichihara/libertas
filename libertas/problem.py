@@ -1,5 +1,6 @@
 """Anisotropic topology optimization problem definition."""
 
+from math import pi
 from typing import Optional, Dict, Any, Union, Tuple, List
 from pathlib import Path
 
@@ -45,7 +46,10 @@ class AnisotropicTopologyOptimization:
         filter_radius_density: float = 0.1,
         filter_radius_orientation: float = 0.1,
         sgn_sharpness: float = 10.0,
-        output_dir: Optional[str] = None
+        output_dir: Optional[str] = None,
+        stacking_sequence: Optional[List[float]] = None,
+        stacking_weights: Optional[List[float]] = None,
+        orientation_bounds: Optional[List[Tuple[float, float]]] = None,
     ) -> None:
         """
         Initialize anisotropic topology optimization problem.
@@ -61,6 +65,34 @@ class AnisotropicTopologyOptimization:
             filter_radius_orientation: Helmholtz filter radius for orientation
             sgn_sharpness: Sharpness parameter for sgn function in orientation coupling
             output_dir: Output directory for results
+            stacking_sequence: Layer angle offsets in **degrees** relative to the
+                optimized fiber direction.  ``None`` (default) keeps single-layer
+                behaviour.  Examples::
+
+                    [0, 90]            # [0°/90°] cross-ply
+                    [0, 45, -45, 90]   # quasi-isotropic
+                    [0, 60, -60]       # triaxial
+
+                The effective stiffness tensor is the equal-weight average of the
+                stiffness tensors evaluated at ``θ + offset`` for each offset.
+            stacking_weights: Thickness fraction of each layer.  Must have the
+                same length as ``stacking_sequence``.  Values need not sum to 1
+                — they are normalized internally.  ``None`` (default) = equal
+                thickness.  Ignored when ``stacking_sequence`` is ``None``.
+                Example for a 75 %/25 % [0°/90°] laminate::
+
+                    stacking_sequence=[0, 90],
+                    stacking_weights=[3, 1]   # normalized → [0.75, 0.25]
+            orientation_bounds: Bounds for the three orientation design variables
+                ``(x1, x2, x3)`` where ``x1, x2`` control the diagonal entries
+                and ``x3`` controls the sign of the off-diagonal coupling
+                ``a12`` via ``sgn(x3)``.  Default: ``[(-1,1), (-1,1), (-1,1)]``.
+
+                For symmetric stacking sequences (e.g. [0/90]) where the sign
+                of ``a12`` is physically irrelevant, constraining ``x3 >= 0``
+                eliminates spurious 90-degree jumps in the orientation field::
+
+                    orientation_bounds=[(-1, 1), (-1, 1), (0, 1)]
         """
         self.geometry = geometry
         self.material = material
@@ -72,6 +104,11 @@ class AnisotropicTopologyOptimization:
         self.filter_radius_orientation = filter_radius_orientation
         self.sgn_sharpness = sgn_sharpness
         self.output_dir = Path(output_dir) if output_dir else Path("./output")
+        self.stacking_sequence = stacking_sequence
+        self.stacking_weights = stacking_weights
+        self.orientation_bounds = orientation_bounds or [(-1, 1), (-1, 1), (-1, 1)]
+        # Converted to radians in _build_problem; None means single-layer mode.
+        self._angle_offsets_rad: Optional[List[float]] = None
 
         # Create output directory
         self.output_dir.mkdir(parents=True, exist_ok=True)
@@ -165,6 +202,10 @@ class AnisotropicTopologyOptimization:
         orientation_initial: Tuple[float, float, float]
     ) -> None:
         """Build pytop problem from high-level specification."""
+        # Convert stacking sequence from degrees to radians (once, before FEniCS calls)
+        if self.stacking_sequence is not None:
+            self._angle_offsets_rad = [deg * pi / 180.0 for deg in self.stacking_sequence]
+
         # Create output directory structure
         h5_dir = self.output_dir / "h5"
         xml_dir = self.output_dir / "xml"
@@ -211,7 +252,7 @@ class AnisotropicTopologyOptimization:
             self._spaces["vector3"],
             "orientation",
             list(orientation_initial),
-            [(-1, 1), (-1, 1), (-1, 1)],
+            self.orientation_bounds,
             lambda x: pt.helmholtz_filter(x, R=self.filter_radius_orientation),
             postprocess_orientation
         )
@@ -269,16 +310,31 @@ class AnisotropicTopologyOptimization:
                 u = pt.TrialFunction(problem._spaces["displacement"])
                 du = pt.TestFunction(problem._spaces["displacement"])
 
-                a = linear_2D_orthotropic_elasticity_bilinear_form_tensor(
-                    u, du,
-                    problem.material.E1,
-                    problem.material.E2,
-                    problem.material.G12,
-                    problem.material.nu12,
-                    orientation_tensor_2,
-                    orientation_tensor_4,
-                    penalty
-                )
+                if problem._angle_offsets_rad is not None:
+                    from libertas.stacking import stacked_bilinear_form
+                    a = stacked_bilinear_form(
+                        u, du,
+                        problem.material.E1,
+                        problem.material.E2,
+                        problem.material.G12,
+                        problem.material.nu12,
+                        orientation_tensor_2,
+                        orientation_tensor_4,
+                        problem._angle_offsets_rad,
+                        problem.stacking_weights,
+                        penalty,
+                    )
+                else:
+                    a = linear_2D_orthotropic_elasticity_bilinear_form_tensor(
+                        u, du,
+                        problem.material.E1,
+                        problem.material.E2,
+                        problem.material.G12,
+                        problem.material.nu12,
+                        orientation_tensor_2,
+                        orientation_tensor_4,
+                        penalty,
+                    )
 
                 # Load term
                 if problem._forces:
@@ -310,6 +366,11 @@ class AnisotropicTopologyOptimization:
                     problem._results_file.write(problem._displacement, time)
 
                     # Compute and write stress tensor
+                    # For stacking sequences, the stacked stress project
+                    # builds a very large UFL expression tree that can
+                    # exhaust memory.  Use the base (single-layer) stress
+                    # for recording; the stacking is still fully accounted
+                    # for in the bilinear form that drives the optimization.
                     stress_tensor = orthotropic_2d_plane_stress_tensor(
                         problem._displacement,
                         problem.material.E1,
@@ -317,7 +378,7 @@ class AnisotropicTopologyOptimization:
                         problem.material.G12,
                         problem.material.nu12,
                         orientation_tensor_2,
-                        orientation_tensor_4
+                        orientation_tensor_4,
                     )
                     stress_function = pt.project(stress_tensor, problem._spaces["tensor"])
                     stress_function.rename("stress", "stress")
@@ -352,23 +413,50 @@ class AnisotropicTopologyOptimization:
         return AnisotropicProblem()
 
     def _save_final_results_to_xml(self) -> None:
-        """Save final density and orientation fields to XML format."""
+        """Save final density and orientation fields to XML format.
+
+        The orientation is saved as the **postprocessed** 2nd-order tensor
+        ``(a11, a22, a12)`` (after ``isoparametric_2D_box_to_triangle`` and
+        ``sgn``), matching what is written to the XDMF results file during
+        optimization.  This ensures downstream consumers (stripe generation,
+        rotation, etc.) receive physically valid orientation tensors with
+        ``a11, a22 ∈ [0, 1]``, ``a11 + a22 = 1``.
+        """
         try:
-            # Get final design variables using dictionary-like access
-            final_density = self._design_vars_pytop["density"]
-            final_orientation = self._design_vars_pytop["orientation"]
+            # Get filtered design variables
+            filtered_orientation_elems = self._design_vars_pytop["orientation"]
 
             print(f"Saving final results to {self._xml_dir}...")
 
             # Save density to XML
+            final_density = self._design_vars_pytop["density"]
             density_file = pt.File(str(self._xml_dir / "density.xml"))
             density_file << final_density
             print(f"  ✓ Saved density.xml")
 
-            # Save orientation to XML
+            # Postprocess orientation: apply isoparametric mapping + sgn
+            # to obtain the physical tensor (a11, a22, a12)
+            diagonals = isoparametric_2D_box_to_triangle(
+                filtered_orientation_elems[0],
+                filtered_orientation_elems[1]
+            )
+            coupling_factor = (
+                pt.sqrt(diagonals[0] * diagonals[1])
+                * sgn(filtered_orientation_elems[2], self.sgn_sharpness)
+            )
+            orientation_vector = pt.as_vector([
+                diagonals[0],      # a11
+                diagonals[1],      # a22
+                coupling_factor,   # a12
+            ])
+            orientation_function = pt.project(
+                orientation_vector, self._spaces["vector3"]
+            )
+            orientation_function.rename("orientation", "orientation")
+
             orientation_file = pt.File(str(self._xml_dir / "orientation.xml"))
-            orientation_file << final_orientation
-            print(f"  ✓ Saved orientation.xml")
+            orientation_file << orientation_function
+            print(f"  ✓ Saved orientation.xml (postprocessed tensor)")
 
         except Exception as e:
             import traceback
