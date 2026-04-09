@@ -10,12 +10,12 @@ contractions, keeping the UFL expression tree small.
 from math import pi
 from typing import List, Optional
 
+from fenics import cos, sin, as_matrix, as_tensor, inner, sym, grad, dx, Constant
 try:
-    from fenics import cos, sin, as_matrix, as_tensor, inner, sym, grad, dx, Constant
     from ufl import indices
-    from pytop.physics.elasticity import ortho_elast_2D_stiffness_tensor_from_orientation_tensor
-except ImportError:
-    pass
+except (ImportError, RuntimeError):
+    from ufl_legacy import indices
+from pytop.physics.elasticity import ortho_elast_2D_stiffness_tensor_from_orientation_tensor
 
 
 def _normalize_weights(weights: Optional[List[float]], n: int) -> List[float]:
