@@ -46,116 +46,111 @@ def _require_fc():
         )
 
 
-def _resolve_params(print_params, **overrides):
-    """Extract print parameters from PrintParams or use defaults."""
-    defaults = dict(
-        printer="generic", nozzle_temp=210, bed_temp=60,
-        print_speed=1000, travel_speed=3000,
-        extrusion_width=0.4, extrusion_height=0.2,
-        retract=True, primer=None, relative_e=True, fan_speed=None,
-    )
+# ═══════════════════════════════════════════════════════════════
+# Internal helpers
+# ═══════════════════════════════════════════════════════════════
+
+def _build_init_data(print_params, **overrides):
+    """Build FullControl initialization_data from PrintParams."""
+    data = {
+        "print_speed": 1000,
+        "travel_speed": 3000,
+        "nozzle_temp": 210,
+        "bed_temp": 60,
+        "extrusion_width": 0.4,
+        "extrusion_height": 0.2,
+        "relative_e": True,
+        "primer": "no_primer",
+        "fan_percent": 100,
+    }
 
     if print_params is not None:
-        defaults.update(
-            printer=print_params.printer.value,
-            nozzle_temp=print_params.temperature.nozzle_temp,
-            bed_temp=print_params.temperature.bed_temp,
+        data.update(
             print_speed=print_params.speed.print_speed,
             travel_speed=print_params.speed.travel_speed,
+            nozzle_temp=print_params.temperature.nozzle_temp,
+            bed_temp=print_params.temperature.bed_temp,
             extrusion_width=print_params.extrusion.extrusion_width,
             extrusion_height=print_params.extrusion.extrusion_height,
-            retract=print_params.retraction.enabled,
-            primer=print_params.primer,
             relative_e=print_params.relative_extrusion,
-            fan_speed=(int(print_params.cooling.fan_speed)
-                       if print_params.cooling.fan_always_on else None),
+            e_units=print_params.e_units,
+            dia_feed=print_params.extrusion.filament_diameter,
+            fan_percent=int(print_params.cooling.fan_speed),
         )
+        if print_params.extrusion.extrusion_multiplier != 1.0:
+            data["material_flow_percent"] = int(
+                print_params.extrusion.extrusion_multiplier * 100
+            )
+        if print_params.primer and isinstance(print_params.primer, str):
+            data["primer"] = print_params.primer
 
-    # Apply explicit overrides (non-None only)
     for k, v in overrides.items():
-        if v is not None and k in defaults:
-            defaults[k] = v
+        if v is not None and k in data:
+            data[k] = v
 
-    return defaults
+    return data
 
 
-def _build_fc_steps(layers_data, params):
+def _build_fc_steps(layers_data, print_params):
     """
     Build FullControl step list from layer data.
 
+    Uses fc.travel_to() for path transitions and fc.PrinterCommand for
+    firmware retraction.  All extrusion calculation is delegated to
+    FullControl.
+
     Args:
         layers_data: list of (z_height, paths, offset_x, offset_y)
-        params: dict from _resolve_params
+        print_params: PrintParams or None
 
     Returns:
-        (steps, total_extrusion, total_travel, total_paths)
+        (steps, total_paths)
     """
     steps = []
-    steps.append(fc.Printer(print_speed=params["print_speed"]))
-
-    if params["fan_speed"] is not None:
-        steps.append(fc.Fan(speed_percent=params["fan_speed"]))
-
-    total_extrusion = 0.0
-    total_travel = 0.0
     total_paths = 0
-    prev_end = None
+    retract = True
+    if print_params is not None:
+        retract = print_params.retraction.enabled
+
+    first_point_done = False
 
     for z, paths, ox, oy in layers_data:
         for path in paths:
-            total_paths += 1
             nodes = path.nodes
+            if not nodes:
+                continue
 
-            for j, (x, y) in enumerate(nodes):
-                px, py = x + ox, y + oy
+            total_paths += 1
+            x0, y0 = nodes[0]
+            start = fc.Point(x=x0 + ox, y=y0 + oy, z=z)
 
-                if j == 0:
-                    # Start of path — travel move if not first point
-                    if prev_end is not None:
-                        travel_dist = ((px - prev_end[0])**2 +
-                                       (py - prev_end[1])**2)**0.5
-                        total_travel += travel_dist
-                        if params["retract"] and travel_dist > 0.5:
-                            steps.append(fc.Extruder(on=False))
-                        steps.append(fc.Point(x=px, y=py, z=z))
-                        if params["retract"] and travel_dist > 0.5:
-                            steps.append(fc.Extruder(on=True))
-                    else:
-                        steps.append(fc.Point(x=px, y=py, z=z))
-                else:
-                    steps.append(fc.Point(x=px, y=py, z=z))
-                    x_prev, y_prev = nodes[j - 1]
-                    seg_len = ((x - x_prev)**2 + (y - y_prev)**2)**0.5
-                    total_extrusion += seg_len
+            if first_point_done:
+                # Travel to start of next path
+                if retract:
+                    steps.append(fc.PrinterCommand(id="retract"))
+                steps.extend(fc.travel_to(start))
+                if retract:
+                    steps.append(fc.PrinterCommand(id="unretract"))
+            else:
+                steps.extend(fc.travel_to(start))
+                first_point_done = True
 
-            if nodes:
-                lx, ly = nodes[-1]
-                prev_end = (lx + ox, ly + oy)
+            # Print path
+            for x, y in nodes[1:]:
+                steps.append(fc.Point(x=x + ox, y=y + oy, z=z))
 
-    return steps, total_extrusion, total_travel, total_paths
+    return steps, total_paths
 
 
-def _generate_gcode(steps, params, output_path, visualize=False, **extra_kwargs):
+def _generate_gcode(steps, init_data, printer_name, output_path,
+                    visualize=False):
     """Run FullControl transform and save."""
-    init_data = {
-        'print_speed': params["print_speed"],
-        'travel_speed': params["travel_speed"],
-        'nozzle_temp': params["nozzle_temp"],
-        'bed_temp': params["bed_temp"],
-        'extrusion_width': params["extrusion_width"],
-        'extrusion_height': params["extrusion_height"],
-        'relative_e': params["relative_e"],
-    }
-    if params["primer"] and isinstance(params["primer"], str):
-        init_data['primer'] = params["primer"]
-    init_data.update(extra_kwargs)
-
     controls = fc.GcodeControls(
-        printer_name=params["printer"],
+        printer_name=printer_name,
         initialization_data=init_data,
     )
 
-    gcode = fc.transform(steps, 'gcode', controls)
+    gcode = fc.transform(steps, 'gcode', controls, show_tips=False)
 
     out = PathLib(output_path)
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -207,29 +202,27 @@ def layer_to_gcode(
         offset_y: Y offset applied to all coordinates (mm).
         visualize: Generate HTML visualization (default: False).
         **kwargs: Override individual params (nozzle_temp, print_speed, etc.)
-                  and/or pass extra FullControl parameters.
 
     Returns:
         dict with: num_paths, total_length, total_travel, gcode_path
     """
     _require_fc()
 
-    params = _resolve_params(print_params, **kwargs)
-
     if z_height is None:
         z_height = layer.z_height if layer.z_height is not None else initial_z
 
+    init_data = _build_init_data(print_params, **kwargs)
+    printer_name = (print_params.printer.value
+                    if print_params is not None else "generic")
+
     layers_data = [(z_height, layer.paths, offset_x, offset_y)]
-    steps, total_ext, total_trav, n_paths = _build_fc_steps(layers_data, params)
+    steps, n_paths = _build_fc_steps(layers_data, print_params)
 
-    print(f"Generating GCode: {n_paths} paths, "
-          f"extrusion={total_ext:.1f}mm, travel={total_trav:.1f}mm, z={z_height:.3f}mm")
+    print(f"Generating GCode: {n_paths} paths, z={z_height:.3f}mm")
 
-    result = _generate_gcode(steps, params, output_path, visualize=visualize)
-    result.update(
-        num_paths=n_paths, total_length=total_ext,
-        total_travel=total_trav, z_height=z_height,
-    )
+    result = _generate_gcode(steps, init_data, printer_name, output_path,
+                             visualize=visualize)
+    result.update(num_paths=n_paths, z_height=z_height)
     print(f"GCode saved to: {output_path}")
     return result
 
@@ -270,7 +263,7 @@ def svg_to_gcode(
         **kwargs: Override individual params and/or pass extra FullControl parameters.
 
     Returns:
-        dict with: num_paths, total_length, total_travel, gcode_path, etc.
+        dict with: num_paths, gcode_path, etc.
     """
     _require_fc()
     from libertas.svg_parser import parse_svg_to_paths
@@ -360,32 +353,33 @@ def model_to_gcode(
         **kwargs: Override individual params (nozzle_temp, print_speed, etc.)
 
     Returns:
-        dict with: num_layers, num_paths, total_length, total_travel, gcode_path
+        dict with: num_layers, num_paths, gcode_path
     """
     _require_fc()
 
-    params = _resolve_params(print_params, **kwargs)
+    init_data = _build_init_data(print_params, **kwargs)
+    printer_name = (print_params.printer.value
+                    if print_params is not None else "generic")
+    eh = init_data["extrusion_height"]
 
     model.sort_layers_by_height()
 
     ox = getattr(model, 'offset_x', 0.0)
     oy = getattr(model, 'offset_y', 0.0)
-    eh = params["extrusion_height"]
 
     layers_data = []
     for i, layer in enumerate(model.layers):
         z = layer.z_height if layer.z_height is not None else (i + 1) * eh
         layers_data.append((z, layer.paths, ox, oy))
 
-    steps, total_ext, total_trav, n_paths = _build_fc_steps(layers_data, params)
+    steps, n_paths = _build_fc_steps(layers_data, print_params)
 
-    print(f"Generating GCode: {len(model.layers)} layers, {n_paths} paths, "
-          f"extrusion={total_ext:.1f}mm, travel={total_trav:.1f}mm")
+    print(f"Generating GCode: {len(model.layers)} layers, {n_paths} paths")
 
-    result = _generate_gcode(steps, params, output_path, visualize=visualize)
+    result = _generate_gcode(steps, init_data, printer_name, output_path,
+                             visualize=visualize)
     result.update(
         num_layers=len(model.layers), num_paths=n_paths,
-        total_length=total_ext, total_travel=total_trav,
         height_range=model.get_height_range(),
     )
     print(f"GCode saved to: {output_path}")
@@ -420,12 +414,11 @@ def layer_to_json(
     steps = []
     for i, path in enumerate(layer.paths):
         if i > 0 and separate_paths:
-            steps.append(fc.Extruder(on=False))
-
-        for j, (x, y) in enumerate(path.nodes):
+            steps.extend(fc.travel_to(
+                fc.Point(x=path.nodes[0][0], y=path.nodes[0][1], z=z_height)
+            ))
+        for x, y in path.nodes:
             steps.append(fc.Point(x=x, y=y, z=z_height))
-            if j == 0 and i > 0 and separate_paths:
-                steps.append(fc.Extruder(on=True))
 
     # Export to JSON
     json_data = [step.__dict__ for step in steps if hasattr(step, '__dict__')]

@@ -70,8 +70,10 @@ model = lb.FibrifierModel(params=params)
 
 # --- Ply 1: +10° ---
 model.add(lb.FibrifierLayer.polymer(svg_10, infill_angle=45, infill_pitch=0.402, layer_height=0.1))
-model.add(lb.FibrifierLayer.fiber(svg_10, threshold=8.0))
-model.add(lb.FibrifierLayer.fiber(svg_m10, threshold=8.0))
+model.add(lb.FibrifierLayer.fiber(svg_10, threshold=4.0))
+model.add(lb.FibrifierLayer.fiber(svg_m10, threshold=4.0))
+model.add(lb.FibrifierLayer.fiber(svg_10, threshold=4.0))
+model.add(lb.FibrifierLayer.fiber(svg_m10, threshold=4.0))
 
 # ============================================================================
 # Generate

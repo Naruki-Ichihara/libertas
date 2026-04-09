@@ -107,6 +107,10 @@ def read_density_from_xml(
     else:
         raise ValueError(f"Unknown interpolation method: {interpolation}")
 
+    # Flip so that row 0 corresponds to y_max (top of domain),
+    # matching the standard image convention expected by extract_contour_svg.
+    density_image = np.flipud(density_image)
+
     # Prepare metadata
     metadata = {
         "bounds": {"x_min": x_min, "x_max": x_max, "y_min": y_min, "y_max": y_max},
@@ -414,6 +418,89 @@ def extract_contour_svg(
         physical_y = np.clip(physical_y, y_min, y_max)
 
         vertices = np.column_stack([physical_x, physical_y])
+
+        # Snap boundary-to-interior transitions to the domain edge.
+        #
+        # Gaussian smoothing causes the density to decay gradually near
+        # boundary endpoints, so the iso-contour peels away from the
+        # domain edge over several pixels instead of turning sharply.
+        # We fix this by detecting every transition where the contour
+        # leaves (or arrives at) a domain boundary edge and projecting
+        # the first interior point onto that edge.  This replaces the
+        # gradual curve with a sharp right-angle corner.
+        #
+        # We also insert missing domain corner vertices when the contour
+        # moves from one boundary edge to another (e.g. left -> top).
+        bnd_tol = (x_max - x_min) / width * 2  # ~2 pixels in physical coords
+
+        def _on_edge(pt):
+            """Return set of boundary edge names the point lies on."""
+            edges = set()
+            if abs(pt[0] - x_min) < bnd_tol:
+                edges.add("left")
+            if abs(pt[0] - x_max) < bnd_tol:
+                edges.add("right")
+            if abs(pt[1] - y_min) < bnd_tol:
+                edges.add("bottom")
+            if abs(pt[1] - y_max) < bnd_tol:
+                edges.add("top")
+            return edges
+
+        def _snap_to_edge(pt, edge):
+            """Project *pt* onto the named boundary edge."""
+            snapped = pt.copy()
+            if edge == "left":
+                snapped[0] = x_min
+            elif edge == "right":
+                snapped[0] = x_max
+            elif edge == "bottom":
+                snapped[1] = y_min
+            elif edge == "top":
+                snapped[1] = y_max
+            return snapped
+
+        _domain_corner = {
+            frozenset(("left",  "bottom")): np.array([x_min, y_min]),
+            frozenset(("left",  "top")):    np.array([x_min, y_max]),
+            frozenset(("right", "bottom")): np.array([x_max, y_min]),
+            frozenset(("right", "top")):    np.array([x_max, y_max]),
+        }
+
+        new_vertices = [vertices[0]]
+        for i in range(1, len(vertices)):
+            prev_edges = _on_edge(vertices[i - 1])
+            curr_edges = _on_edge(vertices[i])
+
+            # Case 1: boundary -> interior  (contour leaves the edge)
+            # Snap the first interior point onto the edge so the corner
+            # is sharp instead of rounded.
+            if prev_edges and not curr_edges:
+                for edge in prev_edges:
+                    snapped = _snap_to_edge(vertices[i], edge)
+                    if np.linalg.norm(snapped - vertices[i - 1]) > bnd_tol:
+                        new_vertices.append(snapped)
+                        break  # one snap is enough
+
+            # Case 2: interior -> boundary  (contour arrives at the edge)
+            # Snap the last interior point onto the edge.
+            elif not prev_edges and curr_edges:
+                for edge in curr_edges:
+                    snapped = _snap_to_edge(vertices[i - 1], edge)
+                    if np.linalg.norm(snapped - vertices[i]) > bnd_tol:
+                        new_vertices.append(snapped)
+                        break
+
+            # Case 3: boundary -> different boundary  (domain corner)
+            elif prev_edges and curr_edges and prev_edges != curr_edges:
+                key = frozenset(prev_edges | curr_edges)
+                corner = _domain_corner.get(key)
+                if corner is not None:
+                    if (np.linalg.norm(vertices[i - 1] - corner) > bnd_tol and
+                            np.linalg.norm(vertices[i] - corner) > bnd_tol):
+                        new_vertices.append(corner)
+
+            new_vertices.append(vertices[i])
+        vertices = np.array(new_vertices)
 
         if len(vertices) < 3:
             continue
@@ -1952,6 +2039,10 @@ def stripe_to_image(
             except:
                 stripe_array[i, j] = 0.0  # Outside mesh
 
+    # Flip so that row 0 corresponds to y_max (top of domain),
+    # matching the standard image convention expected by stripe_to_svg.
+    stripe_array = np.flipud(stripe_array)
+
     # Prepare metadata
     metadata = {
         'resolution': resolution,
@@ -2122,6 +2213,9 @@ def stripe_to_svg(
                         density_array[i, j] = density_val
                     except:
                         density_array[i, j] = 0.0
+
+            # Flip so row 0 = y_max (image convention), consistent with stripe_array
+            density_array = np.flipud(density_array)
 
             # Create binary mask directly from density array (no padding)
             # This prevents paths from connecting along boundaries
