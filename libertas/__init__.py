@@ -23,7 +23,7 @@ from libertas.postprocess import (
 from libertas.path import Path
 from libertas.layer import Layer
 from libertas.model import Model
-from libertas.svg_parser import parse_svg_to_paths, save_paths_to_svg
+from libertas.svg_parser import parse_svg_to_paths, save_paths_to_svg, create_fiber_svg
 from libertas.gcode import layer_to_gcode, svg_to_gcode, model_to_gcode, layer_to_json, svg_to_json
 from libertas.fibrifier_gcode import (
     svg_to_fibrifier_gcode,
@@ -73,6 +73,7 @@ __all__ = [
     "Model",
     "parse_svg_to_paths",
     "save_paths_to_svg",
+    "create_fiber_svg",
     # GCode generation
     "layer_to_gcode",
     "svg_to_gcode",

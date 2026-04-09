@@ -4,7 +4,7 @@ CFRTP Gcode Generator for curved fiber paths from SVG.
 Output format matches Fibrifier (9T Labs) gcode exactly.
 
 Public API:
-    FibrifierLayer — Define a single layer (perimeter / fiber / infill)
+    FibrifierLayer — Define a single layer (polymer / fiber / infill)
     FibrifierModel — Stack layers and generate gcode
     FibrifierParams — Printing parameters
     svg_to_fibrifier_gcode — Convenience function (legacy)
@@ -591,7 +591,7 @@ class FibrifierLayer:
     Defines a single layer in a Fibrifier print stack.
 
     Use factory methods to create layers:
-        FibrifierLayer.perimeter(svg, infill_angle=45)
+        FibrifierLayer.polymer(svg, infill_angle=45)
         FibrifierLayer.fiber(svg, threshold=8.0)
         FibrifierLayer.infill(svg, angle=-45)
 
@@ -601,14 +601,16 @@ class FibrifierLayer:
     The SVG is loaded lazily on first access (or eagerly via prepare()).
     """
 
-    def __init__(self, svg_path: str, layer_type: str, **kwargs):
+    def __init__(self, svg_path: str, layer_type: str, layer_height: float = None, **kwargs):
         """
         Don't call directly — use factory methods instead.
 
-        layer_type: 'P' (perimeter), 'F' (fiber), 'PI' (infill-only polymer)
+        layer_type: 'P' (polymer), 'F' (fiber), 'PI' (infill-only polymer)
+        layer_height: Layer thickness (mm). None = use FibrifierParams default.
         """
         self.svg_path = svg_path
         self.layer_type = layer_type
+        self.layer_height = layer_height  # None means use params default
         self.kwargs = kwargs
 
         # Will be populated by prepare()
@@ -617,18 +619,20 @@ class FibrifierLayer:
         self._prepared = False
 
     @classmethod
-    def perimeter(cls, svg_path: str, infill_angle: float = None,
-                  infill_pitch: float = 0.8, infill_inset: float = 0.3):
+    def polymer(cls, svg_path: str, infill_angle: float = None,
+                infill_pitch: float = 0.8, infill_inset: float = 0.3,
+                layer_height: float = None):
         """
-        Polymer perimeter layer (contour outlines + optional infill).
+        Polymer layer (contour outlines + optional infill).
 
         Args:
             svg_path: SVG file with contour paths.
-            infill_angle: Angle for infill (deg). None = perimeter only.
+            infill_angle: Angle for infill (deg). None = contour only, no infill.
             infill_pitch: Infill line spacing (mm).
             infill_inset: Inset from contour boundary (mm).
+            layer_height: Layer thickness (mm). None = use params default.
         """
-        return cls(svg_path, "P",
+        return cls(svg_path, "P", layer_height=layer_height,
                    infill_angle=infill_angle,
                    infill_pitch=infill_pitch,
                    infill_inset=infill_inset)
@@ -636,7 +640,7 @@ class FibrifierLayer:
     @classmethod
     def fiber(cls, svg_path: str, threshold: float = 8.0,
               min_length: float = 23.73, smooth_sigma: float = 3.0,
-              decimate_epsilon: float = 0.05):
+              decimate_epsilon: float = 0.05, layer_height: float = None):
         """
         Fiber layer (stripe paths with TSP ordering, smoothing, decimation).
 
@@ -646,8 +650,9 @@ class FibrifierLayer:
             min_length: Minimum fiber length (mm). Shorter paths are dropped.
             smooth_sigma: Gaussian smoothing sigma.
             decimate_epsilon: RDP decimation tolerance (mm).
+            layer_height: Layer thickness (mm). None = use params default.
         """
-        return cls(svg_path, "F",
+        return cls(svg_path, "F", layer_height=layer_height,
                    threshold=threshold,
                    min_length=min_length,
                    smooth_sigma=smooth_sigma,
@@ -655,17 +660,19 @@ class FibrifierLayer:
 
     @classmethod
     def infill(cls, svg_path: str, angle: float = 45,
-               pitch: float = 0.8, inset: float = 0.3):
+               pitch: float = 0.8, inset: float = 0.3,
+               layer_height: float = None):
         """
-        Polymer infill-only layer (contour perimeters + full infill).
+        Polymer infill-only layer (contour outlines + full infill).
 
         Args:
             svg_path: SVG file with contour paths.
             angle: Infill angle (deg).
             pitch: Infill line spacing (mm).
             inset: Inset from contour boundary (mm).
+            layer_height: Layer thickness (mm). None = use params default.
         """
-        return cls(svg_path, "PI",
+        return cls(svg_path, "PI", layer_height=layer_height,
                    infill_angle=angle,
                    infill_pitch=pitch,
                    infill_inset=inset)
@@ -692,8 +699,10 @@ class FibrifierLayer:
         if not self._prepared:
             raise RuntimeError("Call prepare() before to_layer_dict()")
 
+        result = {"layer_height": self.layer_height}
+
         if self.layer_type == "F":
-            return {"fiber": self._fiber_paths, "contour": [], "type": "F"}
+            result.update({"fiber": self._fiber_paths, "contour": [], "type": "F"})
 
         elif self.layer_type in ("P", "PI"):
             paths = list(self._contour_paths)
@@ -706,10 +715,12 @@ class FibrifierLayer:
                     self.kwargs.get("infill_inset", 0.3),
                 )
                 paths.extend(infill)
-            return {"fiber": [], "contour": paths, "type": "P"}
+            result.update({"fiber": [], "contour": paths, "type": "P"})
 
         else:
             raise ValueError(f"Unknown layer_type: {self.layer_type}")
+
+        return result
 
     @property
     def fiber_paths(self):
@@ -720,7 +731,7 @@ class FibrifierLayer:
         return self._contour_paths or []
 
     def __repr__(self):
-        label = {"P": "Perimeter", "F": "Fiber", "PI": "Infill"}[self.layer_type]
+        label = {"P": "Polymer", "F": "Fiber", "PI": "Infill"}[self.layer_type]
         extra = ""
         if self.layer_type in ("P", "PI"):
             a = self.kwargs.get("infill_angle")
@@ -737,10 +748,10 @@ class FibrifierModel:
 
     Example:
         >>> model = lb.FibrifierModel(params=params)
-        >>> model.add(lb.FibrifierLayer.perimeter(svg_10, infill_angle=45))
+        >>> model.add(lb.FibrifierLayer.polymer(svg_10, infill_angle=45))
         >>> model.add(lb.FibrifierLayer.fiber(svg_10, threshold=8))
         >>> model.add(lb.FibrifierLayer.infill(svg_10, angle=-45))
-        >>> model.add(lb.FibrifierLayer.perimeter(svg_m10, infill_angle=45))
+        >>> model.add(lb.FibrifierLayer.polymer(svg_m10, infill_angle=45))
         >>> model.add(lb.FibrifierLayer.fiber(svg_m10, threshold=8))
         >>> result = model.generate("output.gcode")
     """
@@ -822,9 +833,12 @@ class FibrifierModel:
     def summary(self):
         """Print a summary of the layer stack."""
         print(f"FibrifierModel: {len(self.layers)} layers")
+        z = 0.0
         for i, layer in enumerate(self.layers):
-            z = round((i + 1) * self.params.layer_height, 4)
-            print(f"  [{i}] z={z:.2f}mm  {layer}")
+            lh = layer.layer_height or self.params.layer_height
+            z = round(z + lh, 4)
+            h_str = f" (h={lh})" if layer.layer_height else ""
+            print(f"  [{i}] z={z:.2f}mm{h_str}  {layer}")
 
     def __len__(self):
         return len(self.layers)
@@ -928,8 +942,10 @@ class FibrifierGcodeGenerator:
 
             n_layers = len(layers)
             self._write_header(f, bbox=bbox, n_layers=n_layers)
+            z = 0.0
             for layer_idx, layer_data in enumerate(layers):
-                z = round((layer_idx + 1) * self.layer_height, 4)
+                lh = layer_data.get("layer_height") or self.layer_height
+                z = round(z + lh, 4)
                 fiber_paths = layer_data.get("fiber", [])
                 contour_paths = layer_data.get("contour", [])
                 layer_type = layer_data.get("type", None)
