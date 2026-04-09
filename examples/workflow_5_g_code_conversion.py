@@ -67,35 +67,3 @@ result = lb.svg_to_gcode(
     z_height=z_height,
     optimize_paths=optimize_paths
 )
-
-# ============================================================================
-# Summary
-# ============================================================================
-
-print(f"\n📊 Conversion Summary:")
-print(f"  Output file:         {result['gcode_path']}")
-print(f"  Number of paths:     {result['num_paths']}")
-print(f"  Total path length:   {result['total_length']:.2f} mm")
-print(f"  Travel distance:     {result['total_travel']:.2f} mm")
-print(f"  Z-height:            {result['z_height']} mm")
-print(f"  Optimized:           {'Yes' if result.get('optimized', False) else 'No'}")
-
-print(f"\n🖨️ Print Settings:")
-print(f"  Nozzle temp:         {print_params.temperature.nozzle_temp}°C")
-print(f"  Bed temp:            {print_params.temperature.bed_temp}°C")
-print(f"  Print speed:         {print_params.speed.print_speed} mm/min")
-print(f"  Travel speed:        {print_params.speed.travel_speed} mm/min")
-print(f"  Extrusion width:     {print_params.extrusion.extrusion_width} mm")
-print(f"  Layer height:        {print_params.extrusion.extrusion_height} mm")
-
-print(f"\n📝 Next steps:")
-print(f"  1. Review {result['gcode_path']} in a G-code viewer")
-print(f"  2. Adjust print parameters if needed")
-print(f"  3. Send to your 3D printer")
-
-print(f"\n💡 Tips:")
-print(f"  - Paths are optimized to minimize travel distance")
-print(f"  - Retraction is enabled for travel moves")
-print(f"  - Adjust extrusion_multiplier if needed for fine-tuning")
-
-print("\n" + "="*70 + "\n")
