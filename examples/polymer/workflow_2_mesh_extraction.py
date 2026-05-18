@@ -34,15 +34,15 @@ xml_dir = f"{output_dir}/xml"
 resolution = (1000, 500)     # (width, height) in pixels; match aspect ratio of the domain
 
 # Pre-smoothing — blurs the density field before contouring to suppress FEM artifacts
-gaussian_sigma = 2           # pixels; increase for a smoother boundary, 0 to disable
+gaussian_sigma = 1           # pixels; increase for a smoother boundary, 0 to disable
 
 # Contour extraction
 threshold = 0.5              # density iso-level that defines the solid/void interface
 smoothness = 0.01            # Bézier fit tolerance (smaller = smoother, larger = sharper corners)
-corner_angle = 120.0         # corners sharper than this angle (deg) are treated as hard corners
+corner_angle = 100         # corners sharper than this angle (deg) are treated as hard corners
 
 # Mesh quality — Triangle library constraints
-max_area = 0.2               # maximum triangle area (mm²); primary mesh density control
+max_area = 0.05               # maximum triangle area (mm²); primary mesh density control
 min_angle = 25.0             # minimum interior angle (deg); prevents sliver elements
 min_edge_length = 0.05       # None = rely on max_area only (avoids overriding max_area)
 samples_per_curve = 3        # sample points per Bézier curve segment
@@ -119,6 +119,17 @@ print(f"   Mesh extracted successfully!")
 print(f"   Vertices:  {len(mesh_data['vertices']):,}")
 print(f"   Triangles: {len(mesh_data['triangles']):,}")
 print(f"   Mesh saved to: {mesh_output_path}")
+
+# Flip Y so the mesh matches the original domain orientation (y -> y_max - y)
+import xml.etree.ElementTree as ET
+y_max_domain = 30.0  # from metadata bounds
+mesh_data['vertices'][:, 1] = y_max_domain - mesh_data['vertices'][:, 1]
+
+tree = ET.parse(mesh_output_path)
+for v in tree.getroot().findall('.//mesh/vertices/vertex'):
+    v.set('y', str(y_max_domain - float(v.get('y'))))
+tree.write(mesh_output_path, xml_declaration=True)
+print(f"   Y-coordinates flipped (y -> {y_max_domain} - y)")
 
 # ============================================================================
 # Step 4: Visualize Mesh

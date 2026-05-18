@@ -8,13 +8,15 @@ This script:
 """
 
 import libertas as lb
+import os
 
 # ============================================================================
 # Configuration
 # ============================================================================
 
 # Input/Output paths
-output_dir = "outputs/cantilever_problem"
+_HERE = os.path.dirname(__file__)
+output_dir = os.path.join(_HERE, "outputs", "cantilever_10")
 xml_dir = f"{output_dir}/xml"
 
 # Input mesh from mesh_extraction_workflow
@@ -51,4 +53,32 @@ lb.generate_stripe_pattern(
 )
 
 print(f"   Stripe pattern generated successfully!")
+
+# ============================================================================
+# Step 2: Convert Stripe Pattern to SVG Paths
+# ============================================================================
+
+# SVG extraction parameters
+svg_resolution = (1000, 500)
+contour_level = 0.0          # zero-crossing of stripe field
+min_path_length = 0.2        # mm — discard tiny fragments
+density_threshold = 0.5      # clip stripes to solid region
+
+stripe_xml = f"{xml_dir}/stripe"        # without .xml extension (appended internally)
+density_xml = f"{xml_dir}/density"      # without .xml extension
+svg_path = f"{output_dir}/stripe_paths.svg"
+
+print(f"\n3. Converting stripe field to SVG...")
+svg_info = lb.stripe_to_svg(
+    stripe_xml_path=stripe_xml,
+    mesh_path=mesh_path,
+    output_svg_path=svg_path,
+    resolution=svg_resolution,
+    density_xml_path=density_xml,
+    density_threshold=density_threshold,
+    contour_level=contour_level,
+    min_path_length=min_path_length,
+)
+print(f"   SVG saved: {svg_path}")
+print(f"   Contours: {svg_info['num_contours']}, Points: {svg_info['total_points']}")
 

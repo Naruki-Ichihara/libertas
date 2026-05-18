@@ -10,12 +10,14 @@ Run after: workflow_3b (stacked stripe generation).
 """
 
 import libertas as lb
+import os
 
 # ============================================================================
 # Configuration
 # ============================================================================
 
-output_dir = "outputs/cantilever_10"
+_HERE = os.path.dirname(__file__)
+output_dir = os.path.join(_HERE, "outputs", "cantilever_10")
 
 svg_10 = f"{output_dir}/stripe_paths_10deg.svg"
 svg_m10 = f"{output_dir}/stripe_paths_-10deg.svg"

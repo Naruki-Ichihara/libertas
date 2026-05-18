@@ -252,19 +252,38 @@ def _cumulative_distances_from_end(nodes):
 
 
 def _find_cut_index(nodes, nozzle_dead_length):
-    """Find node index where remaining arc-length to end = nozzle_dead_length."""
+    """
+    Find the node index and exact point where the remaining arc-length to
+    the end equals nozzle_dead_length.
+
+    The cut must happen this far before the path end so that the filament
+    still inside the nozzle (the "dead length") is exactly used up by the
+    final pull-through to the end point.
+
+    Returns (cut_idx, cut_point) where cut_idx is the index of the segment
+    start node containing the cut point.
+    """
     dist_from_end = _cumulative_distances_from_end(nodes)
-    for i in range(len(nodes) - 1, 0, -1):
-        if dist_from_end[i] >= nozzle_dead_length:
-            if i < len(nodes) - 1:
-                overshoot = dist_from_end[i] - nozzle_dead_length
-                seg_len = dist_from_end[i] - dist_from_end[i + 1]
-                if seg_len > 1e-9:
-                    t = overshoot / seg_len
-                    x = nodes[i][0] + t * (nodes[i + 1][0] - nodes[i][0])
-                    y = nodes[i][1] + t * (nodes[i + 1][1] - nodes[i][1])
-                    return i, (x, y)
+    total = dist_from_end[0]
+
+    # Path shorter than the dead length: nothing can be cut mid-path,
+    # so cut at the very start.
+    if total <= nozzle_dead_length:
+        return 0, nodes[0]
+
+    # Find the segment [i, i+1] that contains the point located
+    # nozzle_dead_length from the end.
+    for i in range(len(nodes) - 1):
+        if dist_from_end[i] >= nozzle_dead_length >= dist_from_end[i + 1]:
+            overshoot = dist_from_end[i] - nozzle_dead_length
+            seg_len = dist_from_end[i] - dist_from_end[i + 1]
+            if seg_len > 1e-9:
+                t = overshoot / seg_len
+                x = nodes[i][0] + t * (nodes[i + 1][0] - nodes[i][0])
+                y = nodes[i][1] + t * (nodes[i + 1][1] - nodes[i][1])
+                return i, (x, y)
             return i, nodes[i]
+
     return 0, nodes[0]
 
 

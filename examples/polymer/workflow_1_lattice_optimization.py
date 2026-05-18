@@ -11,8 +11,8 @@ import os
 
 # Parameters -------------------------------------------------------
 # Geometry (mm)
-L = 160
-H = 40
+L = 60
+H = 30
 mesh_size = 0.5
 
 # Material (MPa) — orthotropic, fiber-reinforced composite
@@ -23,14 +23,14 @@ nu = 0.22    # Major Poisson's ratio
 
 # Optimization
 p = 3                          # SIMP penalty exponent
-target_fraction = 0.6          # Target volume fraction
+target_fraction = 0.5          # Target volume fraction
 filter_radius = 1.2            # Helmholtz filter radius for density
 filter_radius_orientation = 5  # Helmholtz filter radius for orientation
 
 # Stacking sequence [+10/-10/-10/+10] — equal ply thickness
 # Offset difference = 20 deg -> 180 deg periodicity only.
 # With a12 >= 0 (theta in [0,90]), no equivalent angles exist -> no jumps.
-stacking = [10, -10, -10, 10]  # degrees
+stacking = [0]  # degrees
 
 # Boundary conditions
 delta = 2.5              # Half-width of the load application zone (mm)
@@ -77,7 +77,7 @@ material = lb.OrthotropicMaterial(
     E2=E2,
     G12=G12,
     nu12=nu,
-    name="Angle-ply composite [+10/-10/-10/+10]",
+    name="0",
 )
 
 # Problem statement ------------------------------------------------------
@@ -97,7 +97,7 @@ problem = lb.TopologyOptimization(
 # Optimization -----------------------------------------------------------
 result = problem.optimize(
     algorithm="MMA",
-    max_iterations=150,
+    max_iterations=200,
     tolerance=1e-5,
     density_initial=target_fraction,
 )

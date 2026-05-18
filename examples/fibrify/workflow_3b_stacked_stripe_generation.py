@@ -12,12 +12,14 @@ Run after: workflow_1b (optimization) + workflow_2 (mesh extraction).
 """
 
 import libertas as lb
+import os
 
 # ============================================================================
 # Configuration
 # ============================================================================
 
-output_dir = "outputs/cantilever_10"
+_HERE = os.path.dirname(__file__)
+output_dir = os.path.join(_HERE, "outputs", "cantilever_10")
 xml_dir = f"{output_dir}/xml"
 mesh_path = f"{xml_dir}/mesh_from_density.xml"  # from workflow_2
 
